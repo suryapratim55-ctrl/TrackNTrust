@@ -1,0 +1,2129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Track N Trust - Real-Time Public Transport</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        body { font-family: "Inter", sans-serif; transition: background-color 0.3s, color 0.3s; }
+        
+        /* Hero section background with overlay */
+        .hero-bg {
+            background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), 
+                        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="500" height="300" viewBox="0 0 500 300"><rect width="500" height="300" fill="%23667eea"/><text x="250" y="150" font-family="Arial" font-size="30" fill="white" text-anchor="middle">TrackNTrust TRANSPORT</text></svg>');
+            background-size: cover;
+            position: relative;
+        }
+        
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            animation: fadeIn 1.5s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #06165f 0%, #32ce0b 100%);
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-10px); box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+        .map-container { height: 400px; width: 100%; }
+        
+        /* Occupancy colors */
+        .occupancy-low { color: #22c55e; } /* Green */
+        .occupancy-medium { color: #eab308; } /* Yellow */
+        .occupancy-full { color: #ef4444; } /* Red */
+        
+        /* Seat Matrix Styles */
+        .seat-matrix {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            max-width: 300px;
+            margin: 20px auto;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        
+        .seat {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #aaa;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.8em;
+            font-weight: bold;
+            position: relative;
+            padding: 2px;
+        }
+        
+        .seat.vacant { background-color: #d4edda; border-color: #28a745; }
+        .seat.occupied { background-color: #f8d7da; border-color: #dc3545; cursor: not-allowed; }
+        .seat.selected { background-color: #cce5ff; border-color: #007bff; }
+        
+        .seat-type {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            font-size: 0.6em;
+            color: #666;
+        }
+        
+        .seat.occupied .seat-type { color: #a00; }
+        .seat.vacant .seat-type { color: #0a0; }
+        
+        .seat-booked-by {
+            font-size: 0.6em;
+            color: #555;
+            margin-top: 2px;
+            text-align: center;
+            word-break: break-all;
+        }
+        
+        /* Dark Mode Styles */
+        body.dark-mode {
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        
+        body.dark-mode .hero-bg::before {
+            background: rgba(0,0,0,0.8);
+        }
+        
+        body.dark-mode .bg-gray-50 { background-color: #2d3748; }
+        body.dark-mode .bg-white { background-color: #4a5568; }
+        body.dark-mode .text-gray-800 { color: #e2e8f0; }
+        body.dark-mode .border { border-color: #718096; }
+        body.dark-mode .bg-blue-50 { background-color: #2a4365; }
+        body.dark-mode .bg-yellow-50 { background-color: #744210; }
+        body.dark-mode .bg-purple-50 { background-color: #322659; }
+        body.dark-mode .bg-green-50 { background-color: #22543d; }
+        body.dark-mode .bg-red-50 { background-color: #742a2a; }
+        body.dark-mode .bg-gray-100 { background-color: #2d3748; }
+        body.dark-mode .bg-gray-200 { background-color: #4a5568; }
+        body.dark-mode .bg-gray-300 { background-color: #718096; }
+        
+        body.dark-mode input, 
+        body.dark-mode textarea, 
+        body.dark-mode select {
+            background-color: #2d3748;
+            color: #e2e8f0;
+            border-color: #718096;
+        }
+        
+        body.dark-mode .seat-matrix {
+            background-color: #2d3748;
+            border-color: #718096;
+        }
+        
+        body.dark-mode .seat {
+            border-color: #718096;
+        }
+        
+        body.dark-mode .seat.vacant { background-color: #38a169; border-color: #2f855a; }
+        body.dark-mode .seat.occupied { background-color: #c53030; border-color: #9b2c2c; }
+        body.dark-mode .seat.selected { background-color: #4299e1; border-color: #3182ce; }
+        
+        body.dark-mode .seat-type { color: #cbd5e0; }
+        body.dark-mode .seat.occupied .seat-type { color: #fbd38d; }
+        body.dark-mode .seat.vacant .seat-type { color: #9ae6b4; }
+        body.dark-mode .seat-booked-by { color: #cbd5e0; }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(41, 195, 212, 0.41);
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 90%;
+            max-width: 500px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            animation: slide-in 0.3s forwards;
+        }
+        
+        body.dark-mode .modal-content {
+            background-color: #2d3748;
+            color: #e2e8f0;
+            border-color: #718096;
+        }
+        
+        @keyframes slide-in {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .close-btn {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        
+        .close-btn:hover,
+        .close-btn:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        
+        body.dark-mode .close-btn {
+            color: #cbd5e0;
+        }
+        
+        body.dark-mode .close-btn:hover,
+        body.dark-mode .close-btn:focus {
+            color: #e2e8f0;
+        }
+        
+        /* Logout button */
+        .logout-btn {
+            background-color: #ef4444;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        
+        .logout-btn:hover {
+            background-color: #dc2626;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div id="mainApp" class="min-h-screen">
+        <!-- Home Page -->
+        <section id="homePage" class="min-h-screen hero-bg text-white flex items-center justify-center">
+            <div class="max-w-4xl mx-auto px-4 text-center hero-content">
+                <h1 class="text-5xl md:text-7xl font-bold mb-6 leading-tight">TRACK N TRUST </h1>
+                <p class="text-xl md:text-3xl mb-12 opacity-90">Real-Time Public Transport Tracking for Small Cities</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+                    <div class="card-hover bg-white/10 backdrop-blur-sm p-8 rounded-xl border border-white/20">
+                        <i class="fas fa-id-card text-6xl mb-6"></i>
+                        <h2 class="text-3xl font-semibold mb-4">DRIVER MODE</h2>
+                        <p class="mb-6">Share your live location to help commuters track your bus</p>
+                        <button onclick="selectMode('driver')" class="btn-primary text-white px-8 py-4 rounded-lg font-semibold text-lg hover:scale-105 transition">Enter Driver Mode</button>
+                    </div>
+                    <div class="card-hover bg-white/10 backdrop-blur-sm p-8 rounded-xl border border-white/20">
+                        <i class="fas fa-user text-6xl mb-6"></i>
+                        <h2 class="text-3xl font-semibold mb-4">USER MODE</h2>
+                        <p class="mb-6">Find buses, track live locations, and get accurate ETAs</p>
+                        <button onclick="selectMode('user')" class="btn-primary text-white px-8 py-4 rounded-lg font-semibold text-lg hover:scale-105 transition">Enter User Mode</button>
+                    </div>
+                </div>
+                <div class="mt-8">
+                    <button onclick="showAdminLogin()" class="text-white text-lg hover:underline">Admin / Authority Login</button>
+                </div>
+                <div class="mt-4">
+                    <select id="languageSelector" onchange="changeLanguage(this.value)" class="bg-white/20 text-white p-2 rounded-lg">
+                        <option value="en">English</option>
+                        <option value="hi">हिंदी</option>
+                    </select>
+                </div>
+                <div class="mt-4">
+                    <button id="themeToggle" onclick="toggleTheme()" class="text-white text-2xl p-2 rounded-full bg-white/20 hover:bg-white/30 transition">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Driver Page -->
+        <section id="driverPage" class="min-h-screen py-20 bg-gray-100 hidden">
+            <div class="max-w-4xl mx-auto px-4">
+                <div class="bg-white rounded-xl shadow-xl p-8">
+                    <div class="flex justify-between items-center mb-6">
+                        <button onclick="backToHome()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">← Back to Home</button>
+                        <div class="flex items-center space-x-2">
+                            <select onchange="changeLanguage(this.value)" class="bg-gray-200 text-gray-800 p-2 rounded-lg">
+                                <option value="en">English</option>
+                                <option value="hi">हिंदी</option>
+                            </select>
+                            <button onclick="toggleTheme()" class="text-gray-600 text-2xl p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition">
+                                <i class="fas fa-moon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="driverAuthentication">
+                        <h2 class="text-4xl font-bold mb-8 text-center">Driver Portal</h2>
+                        
+                        <div id="driverLogin" class="mb-8">
+                            <h3 class="text-2xl font-semibold mb-4">Log In as Existing Driver</h3>
+                            <div class="space-y-4 max-w-md mx-auto">
+                                <input type="email" placeholder="Email" id="driverEmail" class="w-full p-3 border rounded-lg"/>
+                                <input type="password" placeholder="Password" id="driverPassword" class="w-full p-3 border rounded-lg"/>
+                                <button onclick="driverLogin()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold">Login</button>
+                            </div>
+                            <p class="text-center mt-4">New driver? <button onclick="showDriverRegistration()" class="text-indigo-600 hover:text-indigo-800 underline">Register here</button></p>
+                            <p class="text-center mt-2"><button onclick="forgotPassword()" class="text-indigo-600 hover:text-indigo-800 underline">Forgot Password?</button></p>
+                        </div>
+                        
+                        <div id="driverRegistration" class="hidden">
+                            <h3 class="text-2xl font-semibold mb-4">Register as New Driver</h3>
+                            <div class="space-y-4 max-w-md mx-auto">
+                                <input type="text" placeholder="Full Name" id="regDriverName" class="w-full p-3 border rounded-lg"/>
+                                <input type="email" placeholder="Email" id="regDriverEmail" class="w-full p-3 border rounded-lg"/>
+                                <input type="password" placeholder="Password" id="regDriverPassword" class="w-full p-3 border rounded-lg"/>
+                                <input type="text" placeholder="Bus Route Name" id="regRouteName" class="w-full p-3 border rounded-lg"/>
+                                <input type="text" placeholder="Bus Route Number" id="regRouteNumber" class="w-full p-3 border rounded-lg"/>
+                                <input type="tel" placeholder="Mobile Number" id="regMobile" class="w-full p-3 border rounded-lg"/>
+                                
+                                <h4 class="text-xl font-semibold mt-6 mb-2">Define Bus Route Stops & Schedule</h4>
+                                <div id="routeStopsContainer" class="space-y-2 border p-3 rounded-lg">
+                                    <div class="flex space-x-2 mb-2">
+                                        <input type="text" placeholder="Stop Name (e.g., 'Main Station')" class="w-2/3 p-2 border rounded-lg stop-name-input"/>
+                                        <input type="time" value="09:00" class="w-1/3 p-2 border rounded-lg stop-time-input"/>
+                                    </div>
+                                </div>
+                                <button onclick="addRouteStopField()" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-semibold mt-2">Add Stop</button>
+                                
+                                <h4 class="text-xl font-semibold mt-6 mb-2">Configure Seat Layout</h4>
+                                <div class="grid grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label class="block text-sm font-medium mb-1">Rows</label>
+                                        <input type="number" min="1" max="20" value="5" id="seatRows" class="w-full p-2 border rounded-lg"/>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium mb-1">Columns</label>
+                                        <input type="number" min="1" max="6" value="4" id="seatCols" class="w-full p-2 border rounded-lg"/>
+                                    </div>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium mb-1">Seat Numbering Pattern</label>
+                                    <select id="seatPattern" class="w-full p-2 border rounded-lg">
+                                        <option value="standard">Standard (A1, A2, B1, B2)</option>
+                                        <option value="numeric">Numeric (1, 2, 3, 4)</option>
+                                    </select>
+                                </div>
+                                
+                                <button onclick="driverRegister()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold mt-6">Register</button>
+                            </div>
+                            <p class="text-center mt-4">Already registered? <button onclick="showDriverLogin()" class="text-indigo-600 hover:text-indigo-800 underline">Login here</button></p>
+                        </div>
+                    </div>
+                    
+                    <div id="driverPanel" class="hidden">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-4xl font-bold">Driver Dashboard</h2>
+                            <button onclick="driverLogout()" class="logout-btn">
+                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                            </button>
+                        </div>
+                        <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                            <p><strong>Name:</strong> <span id="driverNameDisplay"></span></p>
+                            <p><strong>Route:</strong> <span id="driverRouteDisplay"></span></p>
+                            <p><strong>Email:</strong> <span id="driverEmailDisplay"></span></p>
+                        </div>
+                        <h3 class="text-2xl font-semibold mb-4">Share Your Live Location</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <div class="bg-gray-50 p-6 rounded-lg">
+                                    <h4 class="font-semibold mb-2">Location Status</h4>
+                                    <div class="space-y-2">
+                                        <p id="locationStatus">Initializing...</p>
+                                        <p id="currentLocation">Position: --</p>
+                                        <p id="locationTimestamp">Last Update: --</p>
+                                    </div>
+                                </div>
+                                <div class="mt-4">
+                                    <button onclick="startLocationSharing()" class="btn-primary text-white px-6 py-3 rounded-lg font-semibold mr-4">Start Sharing</button>
+                                    <button onclick="stopLocationSharing()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-semibold">Stop Sharing</button>
+                                </div>
+                                
+                                <div class="mt-6 bg-gray-50 p-6 rounded-lg">
+                                    <h4 class="font-semibold mb-2">Update Occupancy Level</h4>
+                                    <select id="occupancyLevel" class="w-full p-3 border rounded-lg mb-4">
+                                        <option value="Low">Low</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="Full">Full</option>
+                                    </select>
+                                    <button onclick="updateOccupancy()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold">Update Occupancy</button>
+                                </div>
+                                
+                                <div class="mt-6 bg-gray-50 p-6 rounded-lg">
+                                    <h4 class="font-semibold mb-2">Set Route Fare</h4>
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-1">Fare Calculation Method</label>
+                                        <select id="fareMethod" class="w-full p-2 border rounded-lg mb-2" onchange="toggleFareInputs()">
+                                            <option value="fixed">Fixed Fare</option>
+                                            <option value="distance">Distance-Based</option>
+                                            <option value="manual">Manual Input</option>
+                                        </select>
+                                    </div>
+                                    <div id="fixedFareInput" class="mb-4">
+                                        <input type="number" placeholder="Enter Fixed Fare (e.g., 50)" id="fixedFare" class="w-full p-3 border rounded-lg"/>
+                                    </div>
+                                    <div id="distanceFareInputs" class="mb-4 hidden">
+                                        <div class="grid grid-cols-2 gap-2 mb-2">
+                                            <input type="number" placeholder="Base Fare" id="baseFare" class="p-2 border rounded-lg" value="20"/>
+                                            <input type="number" placeholder="Per KM Rate" id="perKmRate" class="p-2 border rounded-lg" value="5"/>
+                                        </div>
+                                        <p class="text-sm text-gray-600">Fare will be calculated automatically based on distance</p>
+                                    </div>
+                                    <button onclick="updateRouteFare()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold">Update Fare</button>
+                                </div>
+                                
+                                <div class="mt-6">
+                                    <button onclick="showBookedSeats()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-semibold">
+                                        <i class="fas fa-ticket-alt mr-2"></i> View Booked Seats
+                                    </button>
+                                </div>
+                                
+                                <div class="mt-6">
+                                    <button onclick="showManualBooking()" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white py-3 rounded-lg font-semibold mb-4">
+                                        <i class="fas fa-chair mr-2"></i> Manual Seat Booking
+                                    </button>
+                                </div>
+                                
+                                <div class="mt-6">
+                                    <button onclick="triggerEmergency('driver')" class="w-full bg-red-700 hover:bg-red-800 text-white py-3 rounded-lg font-semibold">
+                                        <i class="fas fa-exclamation-triangle mr-2"></i> Emergency Alert
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="map-container rounded-lg" id="driverMap"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- User Page -->
+        <section id="userPage" class="min-h-screen py-20 bg-white hidden">
+            <div class="max-w-6xl mx-auto px-4">
+                <div class="bg-gray-50 rounded-xl shadow-xl p-8">
+                    <div class="flex justify-between items-center mb-6">
+                        <button onclick="backToHome()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">← Back to Home</button>
+                        <div class="flex items-center space-x-2">
+                            <select onchange="changeLanguage(this.value)" class="bg-gray-200 text-gray-800 p-2 rounded-lg">
+                                <option value="en">English</option>
+                                <option value="hi">हिंदी</option>
+                            </select>
+                            <button onclick="toggleTheme()" class="text-gray-600 text-2xl p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition">
+                                <i class="fas fa-moon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <h2 class="text-4xl font-bold mb-8 text-center">Find Your Bus</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-6">
+                        <div class="relative">
+                            <input type="text" placeholder="Start Location" id="startLocation" class="w-full p-3 border rounded-lg" oninput="showSuggestions('startLocation', 'startSuggestions')"/>
+                            <ul id="startSuggestions" class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 hidden"></ul>
+                        </div>
+                        <div class="relative">
+                            <input type="text" placeholder="End Location" id="endLocation" class="w-full p-3 border rounded-lg" oninput="showSuggestions('endLocation', 'endSuggestions')"/>
+                            <ul id="endSuggestions" class="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 hidden"></ul>
+                        </div>
+                    </div>
+                    <button onclick="searchRoutes()" class="btn-primary text-white px-8 py-3 rounded-lg font-semibold block mx-auto mb-6">Search Routes</button>
+                    <div class="max-w-2xl mx-auto mb-6">
+                        <input type="text" placeholder="Search Bus by Name/Number" id="busSearch" class="w-full p-3 border rounded-lg" oninput="filterBuses()"/>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div id="busList" class="bg-white p-6 rounded-lg shadow-md">
+                            <h3 class="text-xl font-semibold mb-4">Available Buses</h3>
+                            <div id="busItems" class="space-y-4"><p class="text-gray-500">Select a route to see buses</p></div>
+                        </div>
+                        <div class="lg:col-span-2">
+                            <div class="map-container rounded-lg" id="userMap"></div>
+                        </div>
+                    </div>
+                    
+                    <div id="seatBookingSection" class="mt-8 p-6 bg-green-50 rounded-lg hidden">
+                        <h3 class="text-2xl font-semibold mb-4">Seat Selection for <span id="selectedBusName"></span> <span id="routeFareDisplay" class="text-base font-normal"></span></h3>
+                        <div id="seatMatrix" class="seat-matrix"></div>
+                        <div id="bookingForm" class="mt-6 p-4 bg-white rounded-lg shadow-md hidden">
+                            <h4 class="text-xl font-semibold mb-4">Book Seat <span id="selectedSeatNumber"></span></h4>
+                            <div class="space-y-3">
+                                <input type="text" placeholder="Your Full Name" id="bookingName" class="w-full p-3 border rounded-lg"/>
+                                <input type="text" placeholder="Aadhar Number" id="bookingAadhar" class="w-full p-3 border rounded-lg"/>
+                                <input type="tel" placeholder="Phone Number" id="bookingPhone" class="w-full p-3 border rounded-lg"/>
+                                <textarea placeholder="Full Address" id="bookingAddress" class="w-full p-3 border rounded-lg" rows="2"></textarea>
+                                <p class="text-sm text-gray-600">Payment Method: Cash Payment</p>
+                                <button onclick="confirmBooking()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold">Book Now (Cash Payment)</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-8 p-6 bg-blue-50 rounded-lg text-center">
+                        <h3 class="text-2xl font-semibold mb-4">Digital Ticketing</h3>
+                        <p class="text-gray-700 mb-4">Scan QR or use UPI to purchase tickets.</p>
+                        <button onclick="openTicketing()" class="btn-primary text-white px-8 py-4 rounded-lg font-semibold text-lg">
+                            <i class="fas fa-ticket-alt mr-2"></i> Buy Ticket
+                        </button>
+                    </div>
+                    
+                    <div class="mt-8 p-6 bg-yellow-50 rounded-lg">
+                        <h3 class="text-2xl font-semibold mb-4">Provide Feedback</h3>
+                        <textarea id="feedbackText" class="w-full p-3 border rounded-lg mb-4" rows="4" placeholder="Report issues like delays, overcrowding, or driver behavior..."></textarea>
+                        <button onclick="submitFeedback()" class="btn-primary text-white px-6 py-3 rounded-lg font-semibold">
+                            <i class="fas fa-paper-plane mr-2"></i> Submit Feedback
+                        </button>
+                    </div>
+                    
+                    <div class="mt-8 p-6 bg-purple-50 rounded-lg">
+                        <h3 class="text-2xl font-semibold mb-4">Set Bus Alerts</h3>
+                        <div class="space-y-4">
+                            <input type="text" placeholder="Bus Name/Number (e.g., 'Route 10')" id="alertBus" class="w-full p-3 border rounded-lg"/>
+                            <input type="text" placeholder="Stop Name (e.g., 'Market Square')" id="alertStop" class="w-full p-3 border rounded-lg"/>
+                            <input type="number" placeholder="Minutes away (e.g., 10)" id="alertMinutes" class="w-full p-3 border rounded-lg"/>
+                            <button onclick="setBusAlert()" class="btn-primary text-white px-6 py-3 rounded-lg font-semibold">
+                                <i class="fas fa-bell mr-2"></i> Set Alert
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-4">Note: Push notifications and SMS alerts require backend support.</p>
+                    </div>
+                    
+                    <div class="mt-8">
+                        <button onclick="triggerEmergency('user')" class="w-full bg-red-700 hover:bg-red-800 text-white py-3 rounded-lg font-semibold">
+                            <i class="fas fa-exclamation-triangle mr-2"></i> Emergency Alert
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Admin Login Page -->
+        <section id="adminLoginPage" class="min-h-screen py-20 bg-gray-100 hidden">
+            <div class="max-w-md mx-auto px-4 bg-white rounded-xl shadow-xl p-8">
+                <button onclick="backToHome()" class="mb-6 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">← Back to Home</button>
+                <h2 class="text-4xl font-bold mb-8 text-center">Admin / Authority Login</h2>
+                
+                <div id="adminLoginForm">
+                    <div class="space-y-4">
+                        <input type="email" placeholder="Admin Email" id="adminEmail" class="w-full p-3 border rounded-lg"/>
+                        <input type="password" placeholder="Password" id="adminPassword" class="w-full p-3 border rounded-lg"/>
+                        <button onclick="adminLogin()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold">Login</button>
+                    </div>
+                    <p class="text-center mt-4">New admin? <button onclick="showAdminRegistration()" class="text-indigo-600 hover:text-indigo-800 underline">Register here</button></p>
+                </div>
+                
+                <div id="adminRegistration" class="hidden">
+                    <h3 class="text-2xl font-semibold mb-4">Admin Registration</h3>
+                    <div class="space-y-4">
+                        <input type="text" placeholder="Full Name" id="regAdminName" class="w-full p-3 border rounded-lg"/>
+                        <input type="email" placeholder="Email" id="regAdminEmail" class="w-full p-3 border rounded-lg"/>
+                        <input type="password" placeholder="Password" id="regAdminPassword" class="w-full p-3 border rounded-lg"/>
+                        <input type="tel" placeholder="Mobile Number" id="regAdminMobile" class="w-full p-3 border rounded-lg"/>
+                        <input type="text" placeholder="Authority Code" id="regAuthorityCode" class="w-full p-3 border rounded-lg"/>
+                        <button onclick="adminRegister()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold">Register</button>
+                    </div>
+                    <p class="text-center mt-4">Already registered? <button onclick="showAdminLogin()" class="text-indigo-600 hover:text-indigo-800 underline">Login here</button></p>
+                </div>
+                
+                <p class="text-center mt-4 text-gray-600">This dashboard requires a robust backend for full functionality.</p>
+            </div>
+        </section>
+
+        <!-- Booked Seats Modal -->
+        <div id="bookedSeatsModal" class="modal">
+            <div class="modal-content">
+                <span class="close-btn" onclick="closeModal('bookedSeatsModal')">&times;</span>
+                <h3 class="text-2xl font-bold mb-4">Booked Seats on Your Bus</h3>
+                <p id="modalBusInfo" class="mb-4 text-gray-600"></p>
+                <div id="bookedSeatsList" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <!-- Manual Booking Modal -->
+        <div id="manualBookingModal" class="modal">
+            <div class="modal-content">
+                <span class="close-btn" onclick="closeModal('manualBookingModal')">&times;</span>
+                <h3 class="text-2xl font-bold mb-4">Manual Seat Booking</h3>
+                <div class="space-y-4">
+                    <select id="manualSeatSelect" class="w-full p-3 border rounded-lg">
+                        <option value="">Select a seat</option>
+                    </select>
+                    <input type="text" placeholder="Passenger Name" id="manualPassengerName" class="w-full p-3 border rounded-lg"/>
+                    <input type="text" placeholder="Aadhar Number" id="manualAadhar" class="w-full p-3 border rounded-lg"/>
+                    <input type="tel" placeholder="Phone Number" id="manualPhone" class="w-full p-3 border rounded-lg"/>
+                    <textarea placeholder="Address" id="manualAddress" class="w-full p-3 border rounded-lg" rows="2"></textarea>
+                    <button onclick="processManualBooking()" class="w-full btn-primary text-white py-3 rounded-lg font-semibold">Book Seat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentMode = "home";
+        let driverInterval = null;
+        let driverMap, userMap, driverMarker;
+        let busMarkers = {};
+        let isSharing = false;
+        let userLocationMarker = null;
+        let userLocationWatchId = null;
+        let selectedBusForBooking = null;
+        let selectedSeat = null;
+        
+        // Sample data for demonstration
+        const sampleBuses = [
+            {
+                id: "driver1",
+                name: "Route 10",
+                route: "City Center - Suburbia",
+                lat: 22.5726,
+                lng: 88.3639,
+                eta: "15 min",
+                fare: 25,
+                fareMethod: "fixed",
+                baseFare: 20,
+                perKmRate: 5,
+                occupancy: "Medium",
+                stops: [
+                    { name: "City Center", lat: 22.5726, lng: 88.3639, scheduledTime: "09:00" },
+                    { name: "Market Square", lat: 22.5626, lng: 88.3739, scheduledTime: "09:15" },
+                    { name: "Suburbia Terminal", lat: 22.5526, lng: 88.3839, scheduledTime: "09:30" }
+                ],
+                seats: [
+                    { id: "A1", type: "window", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "A2", type: "aisle", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "A3", type: "aisle", status: "occupied", bookedBy: "Rahul Sharma", aadhar: "1234-5678-9012", phone: "9876543210", address: "123 Main St, City Center" },
+                    { id: "A4", type: "window", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "B1", type: "window", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "B2", type: "aisle", status: "occupied", bookedBy: "Priya Patel", aadhar: "2345-6789-0123", phone: "9876543211", address: "456 Park Ave, Suburbia" },
+                    { id: "B3", type: "aisle", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "B4", type: "window", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null }
+                ]
+            },
+            {
+                id: "driver2",
+                name: "Route 20",
+                route: "East End - West Side",
+                lat: 22.5826,
+                lng: 88.3539,
+                eta: "25 min",
+                fare: 30,
+                fareMethod: "fixed",
+                baseFare: 25,
+                perKmRate: 5,
+                occupancy: "Low",
+                stops: [
+                    { name: "East End", lat: 22.5826, lng: 88.3539, scheduledTime: "10:00" },
+                    { name: "Central Plaza", lat: 22.5726, lng: 88.3639, scheduledTime: "10:20" },
+                    { name: "West Side Mall", lat: 22.5626, lng: 88.3739, scheduledTime: "10:40" }
+                ],
+                seats: [
+                    { id: "A1", type: "window", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "A2", type: "aisle", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "A3", type: "aisle", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "A4", type: "window", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "B1", type: "window", status: "occupied", bookedBy: "Amit Kumar", aadhar: "3456-7890-1234", phone: "9876543212", address: "789 Oak St, East End" },
+                    { id: "B2", type: "aisle", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "B3", type: "aisle", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null },
+                    { id: "B4", type: "window", status: "vacant", bookedBy: null, aadhar: null, phone: null, address: null }
+                ]
+            }
+        ];
+        
+        let registeredDrivers = [
+            { id: "driver1", name: "Rajesh Kumar", password: "password1", routeName: "Route 10", routeNumber: "10", email: "rajesh@example.com", mobile: "9876543210" },
+            { id: "driver2", name: "Suresh Patel", password: "password2", routeName: "Route 20", routeNumber: "20", email: "suresh@example.com", mobile: "9876543211" }
+        ];
+        
+        let registeredAdmins = [
+            { id: "admin1", name: "System Administrator", password: "admin123", email: "admin@TransNova.com", mobile: "9876543200", authorityCode: "VIK2023" }
+        ];
+        
+        let allBuses = [...sampleBuses];
+        
+        // Load data from localStorage if available
+        function loadData() {
+            try {
+                const drivers = localStorage.getItem("TransNova_drivers");
+                const buses = localStorage.getItem("TransNova_buses");
+                const admins = localStorage.getItem("TransNova_admins");
+                
+                if (drivers) registeredDrivers = JSON.parse(drivers);
+                if (buses) allBuses = JSON.parse(buses);
+                if (admins) registeredAdmins = JSON.parse(admins);
+                
+                console.log("Data loaded from localStorage");
+            } catch (e) {
+                console.error("Error loading data from localStorage:", e);
+            }
+        }
+        
+        // Save data to localStorage
+        function saveData() {
+            try {
+                localStorage.setItem("TransNova_drivers", JSON.stringify(registeredDrivers));
+                localStorage.setItem("TransNova_buses", JSON.stringify(allBuses));
+                localStorage.setItem("TransNova_admins", JSON.stringify(registeredAdmins));
+                console.log("Data saved to localStorage");
+            } catch (e) {
+                console.error("Error saving to localStorage:", e);
+            }
+        }
+        
+        // Initialize the application
+        function initApp() {
+            loadData();
+            // Check if dark mode was previously enabled
+            if (localStorage.getItem("darkMode") === "enabled") {
+                enableDarkMode();
+            }
+            console.log("TransNova Transport System Initialized");
+        }
+        
+        // Dark mode functions
+        function toggleTheme() {
+            if (document.body.classList.contains('dark-mode')) {
+                disableDarkMode();
+            } else {
+                enableDarkMode();
+            }
+        }
+        
+        function enableDarkMode() {
+            document.body.classList.add('dark-mode');
+            const icon = document.getElementById('themeToggle').querySelector('i');
+            icon.classList.remove('fa-moon');
+            icon.classList.add('fa-sun');
+            localStorage.setItem("darkMode", "enabled");
+        }
+        
+        function disableDarkMode() {
+            document.body.classList.remove('dark-mode');
+            const icon = document.getElementById('themeToggle').querySelector('i');
+            icon.classList.remove('fa-sun');
+            icon.classList.add('fa-moon');
+            localStorage.setItem("darkMode", "disabled");
+        }
+        
+        // Page navigation functions
+        function selectMode(mode) {
+            document.getElementById("homePage").classList.add("hidden");
+            if (mode === "driver") {
+                document.getElementById("driverPage").classList.remove("hidden");
+                currentMode = "driver";
+                initDriverMap();
+            } else if (mode === "user") {
+                document.getElementById("userPage").classList.remove("hidden");
+                currentMode = "user";
+                initUserMap();
+                startUserLocationTracking();
+            }
+        }
+        
+        function backToHome() {
+            document.getElementById("driverPage").classList.add("hidden");
+            document.getElementById("userPage").classList.add("hidden");
+            document.getElementById("adminLoginPage").classList.add("hidden");
+            document.getElementById("homePage").classList.remove("hidden");
+            currentMode = "home";
+            
+            if (driverInterval) {
+                navigator.geolocation.clearWatch(driverInterval);
+            }
+            
+            if (userLocationWatchId) {
+                navigator.geolocation.clearWatch(userLocationWatchId);
+            }
+            
+            isSharing = false;
+            document.getElementById("seatBookingSection").classList.add("hidden");
+            selectedBusForBooking = null;
+            selectedSeat = null;
+        }
+        
+        function showAdminLogin() {
+            document.getElementById("homePage").classList.add("hidden");
+            document.getElementById("adminLoginPage").classList.remove("hidden");
+            document.getElementById("adminLoginForm").classList.remove("hidden");
+            document.getElementById("adminRegistration").classList.add("hidden");
+        }
+        
+        function showAdminRegistration() {
+            document.getElementById("adminLoginForm").classList.add("hidden");
+            document.getElementById("adminRegistration").classList.remove("hidden");
+        }
+        
+        // Driver authentication functions
+        function showDriverRegistration() {
+            document.getElementById("driverLogin").classList.add("hidden");
+            document.getElementById("driverRegistration").classList.remove("hidden");
+            if (document.querySelectorAll('.stop-name-input').length === 0) {
+                addRouteStopField();
+            }
+        }
+        
+        function showDriverLogin() {
+            document.getElementById("driverRegistration").classList.add("hidden");
+            document.getElementById("driverLogin").classList.remove("hidden");
+        }
+        
+        function addRouteStopField() {
+            const container = document.getElementById("routeStopsContainer");
+            const div = document.createElement("div");
+            div.className = "flex space-x-2 mb-2";
+            div.innerHTML = `
+                <input type="text" placeholder="Stop Name (e.g., 'Market Square')" class="w-2/3 p-2 border rounded-lg stop-name-input"/>
+                <input type="time" value="09:00" class="w-1/3 p-2 border rounded-lg stop-time-input"/>
+                <button onclick="this.parentNode.remove()" class="bg-red-400 hover:bg-red-500 text-white px-2 py-1 rounded-lg">X</button>
+            `;
+            container.appendChild(div);
+        }
+        
+        function generateSeatLayout(rows, cols, pattern) {
+            const seats = [];
+            const rowLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'];
+            
+            for (let row = 0; row < rows; row++) {
+                for (let col = 1; col <= cols; col++) {
+                    let seatId;
+                    if (pattern === "numeric") {
+                        seatId = (row * cols + col).toString();
+                    } else {
+                        seatId = rowLabels[row] + col;
+                    }
+                    
+                    seats.push({ 
+                        id: seatId, 
+                        type: col === 1 || col === cols ? "window" : "aisle", 
+                        status: "vacant", 
+                        bookedBy: null, 
+                        aadhar: null,
+                        phone: null,
+                        address: null
+                    });
+                }
+            }
+            
+            return seats;
+        }
+        
+        // Driver functions
+        function initDriverMap() {
+            if (driverMap) {
+                driverMap.remove();
+            }
+            
+            driverMap = L.map("driverMap").setView([22.5726, 88.3639], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(driverMap);
+        }
+        
+        function startLocationSharing() {
+            if (!navigator.geolocation) {
+                alert("Geolocation is not supported by this browser.");
+                return;
+            }
+            
+            if (isSharing) return;
+            
+            isSharing = true;
+            document.getElementById("locationStatus").textContent = "Sharing location...";
+            
+            driverInterval = navigator.geolocation.watchPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    const timestamp = new Date(pos.timestamp).toLocaleTimeString();
+                    
+                    document.getElementById("currentLocation").textContent = `Position: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+                    document.getElementById("locationTimestamp").textContent = `Last Update: ${timestamp}`;
+                    
+                    // Update driver's bus location
+                    const driverId = document.getElementById("driverEmail").value.trim();
+                    const busIndex = allBuses.findIndex(bus => bus.id === driverId);
+                    
+                    if (busIndex !== -1) {
+                        allBuses[busIndex].lat = lat;
+                        allBuses[busIndex].lng = lng;
+                        allBuses[busIndex].eta = calculateETA(lat, lng, allBuses[busIndex].stops);
+                        
+                        // Update fare if distance-based
+                        if (allBuses[busIndex].fareMethod === "distance") {
+                            allBuses[busIndex].fare = calculateDistanceFare(allBuses[busIndex]);
+                        }
+                        
+                        saveData();
+                    }
+                    
+                    // Update map marker
+                    if (!driverMarker) {
+                        const busIcon = L.divIcon({
+                            html: '<i class="fas fa-bus text-3xl" style="color:#22c55e;"></i>',
+                            className: 'custom-div-icon',
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 30]
+                        });
+                        
+                        driverMarker = L.marker([lat, lng], { icon: busIcon })
+                            .addTo(driverMap)
+                            .bindPopup("Your Bus Location")
+                            .openPopup();
+                    } else {
+                        driverMarker.setLatLng([lat, lng]);
+                    }
+                    
+                    driverMap.setView([lat, lng]);
+                },
+                (err) => {
+                    document.getElementById("locationStatus").textContent = `Error: ${err.message}`;
+                    alert(`Geolocation Error: ${err.message}`);
+                },
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+        }
+        
+        function stopLocationSharing() {
+            if (driverInterval) {
+                navigator.geolocation.clearWatch(driverInterval);
+                driverInterval = null;
+            }
+            
+            isSharing = false;
+            document.getElementById("locationStatus").textContent = "Location sharing stopped.";
+            
+            if (driverMarker) {
+                driverMap.removeLayer(driverMarker);
+                driverMarker = null;
+            }
+        }
+        
+        function updateOccupancy() {
+            const occupancy = document.getElementById("occupancyLevel").value;
+            const driverId = document.getElementById("driverEmail").value.trim();
+            const busIndex = allBuses.findIndex(bus => bus.id === driverId);
+            
+            if (busIndex !== -1) {
+                allBuses[busIndex].occupancy = occupancy;
+                saveData();
+                alert(`Occupancy updated to: ${occupancy}`);
+            } else {
+                alert("Bus not found. Please login again.");
+            }
+        }
+        
+        function toggleFareInputs() {
+            const method = document.getElementById("fareMethod").value;
+            document.getElementById("fixedFareInput").classList.add("hidden");
+            document.getElementById("distanceFareInputs").classList.add("hidden");
+            
+            if (method === "fixed") {
+                document.getElementById("fixedFareInput").classList.remove("hidden");
+            } else if (method === "distance") {
+                document.getElementById("distanceFareInputs").classList.remove("hidden");
+            }
+        }
+        
+        function calculateDistanceFare(bus) {
+            // Simplified distance calculation for demo
+            // In a real app, this would use the actual route distance
+            const approximateDistance = 10; // Assume 10km for demo
+            return bus.baseFare + (approximateDistance * bus.perKmRate);
+        }
+        
+        function updateRouteFare() {
+            const driverId = document.getElementById("driverEmail").value.trim();
+            const busIndex = allBuses.findIndex(bus => bus.id === driverId);
+            
+            if (busIndex === -1) {
+                alert("Bus not found. Please login again.");
+                return;
+            }
+            
+            const method = document.getElementById("fareMethod").value;
+            
+            if (method === "fixed") {
+                const fare = parseFloat(document.getElementById("fixedFare").value);
+                
+                if (isNaN(fare) || fare < 0) {
+                    alert("Please enter a valid fare amount.");
+                    return;
+                }
+                
+                allBuses[busIndex].fare = fare;
+                allBuses[busIndex].fareMethod = "fixed";
+            } else if (method === "distance") {
+                const baseFare = parseFloat(document.getElementById("baseFare").value);
+                const perKmRate = parseFloat(document.getElementById("perKmRate").value);
+                
+                if (isNaN(baseFare) || baseFare < 0 || isNaN(perKmRate) || perKmRate < 0) {
+                    alert("Please enter valid fare parameters.");
+                    return;
+                }
+                
+                allBuses[busIndex].baseFare = baseFare;
+                allBuses[busIndex].perKmRate = perKmRate;
+                allBuses[busIndex].fareMethod = "distance";
+                allBuses[busIndex].fare = calculateDistanceFare(allBuses[busIndex]);
+            } else if (method === "manual") {
+                const fare = parseFloat(prompt("Enter the fare amount:"));
+                
+                if (isNaN(fare) || fare < 0) {
+                    alert("Please enter a valid fare amount.");
+                    return;
+                }
+                
+                allBuses[busIndex].fare = fare;
+                allBuses[busIndex].fareMethod = "manual";
+            }
+            
+            saveData();
+            alert(`Fare updated to: ₹${allBuses[busIndex].fare}`);
+        }
+        
+        // User functions
+        function initUserMap() {
+            if (userMap) {
+                userMap.remove();
+            }
+            
+            userMap = L.map("userMap").setView([22.5726, 88.3639], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(userMap);
+            
+            updateBusMarkers();
+        }
+        
+        function startUserLocationTracking() {
+            if (!navigator.geolocation) return;
+            
+            if (userLocationWatchId) {
+                navigator.geolocation.clearWatch(userLocationWatchId);
+            }
+            
+            userLocationWatchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    
+                    const userIcon = L.divIcon({
+                        html: '<i class="fas fa-street-view text-red-600 text-3xl"></i>',
+                        className: 'custom-div-icon',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 30]
+                    });
+                    
+                    if (!userLocationMarker) {
+                        userLocationMarker = L.marker([lat, lng], { icon: userIcon })
+                            .addTo(userMap)
+                            .bindPopup("You are here")
+                            .openPopup();
+                    } else {
+                        userLocationMarker.setLatLng([lat, lng]);
+                    }
+                    
+                    userMap.setView([lat, lng], 15);
+                },
+                (err) => {
+                    console.error("User location error:", err.message);
+                },
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+        }
+        
+        function getNearestPlaces(query) {
+            const allStops = [];
+            
+            allBuses.forEach(bus => {
+                bus.stops.forEach(stop => {
+                    if (!allStops.some(s => s.name === stop.name)) {
+                        allStops.push(stop);
+                    }
+                });
+            });
+            
+            return allStops
+                .map(stop => stop.name)
+                .filter(name => name.toLowerCase().includes(query.toLowerCase()));
+        }
+        
+        function showSuggestions(inputId, listId) {
+            const query = document.getElementById(inputId).value;
+            const list = document.getElementById(listId);
+            
+            list.innerHTML = "";
+            
+            if (query.length < 2) {
+                list.classList.add("hidden");
+                return;
+            }
+            
+            const suggestions = getNearestPlaces(query);
+            
+            suggestions.forEach(place => {
+                const li = document.createElement("li");
+                li.className = "p-2 hover:bg-gray-100 cursor-pointer";
+                li.textContent = place;
+                li.onclick = () => {
+                    document.getElementById(inputId).value = place;
+                    list.classList.add("hidden");
+                };
+                list.appendChild(li);
+            });
+            
+            list.classList.remove("hidden");
+        }
+        
+        function searchRoutes() {
+            const start = document.getElementById("startLocation").value.trim();
+            const end = document.getElementById("endLocation").value.trim();
+            
+            if (!start || !end) {
+                alert("Please enter both start and end locations.");
+                return;
+            }
+            
+            const busItems = document.getElementById("busItems");
+            busItems.innerHTML = "";
+            
+            const foundBuses = allBuses.filter(bus => {
+                const hasStart = bus.stops.some(stop => 
+                    stop.name.toLowerCase().includes(start.toLowerCase()));
+                const hasEnd = bus.stops.some(stop => 
+                    stop.name.toLowerCase().includes(end.toLowerCase()));
+                
+                return hasStart && hasEnd;
+            });
+            
+            if (foundBuses.length === 0) {
+                busItems.innerHTML = "<p class='text-gray-500'>No routes found for this journey.</p>";
+            } else {
+                foundBuses.forEach(bus => {
+                    const busDiv = document.createElement("div");
+                    busDiv.className = "p-4 rounded-lg shadow-md cursor-pointer hover:bg-gray-100 flex justify-between items-center transition";
+                    busDiv.onclick = () => selectBus(bus.id);
+                    
+                    busDiv.innerHTML = `
+                        <div>
+                            <h4 class="font-semibold text-lg">${bus.name} (${bus.route})</h4>
+                            <p class="text-sm text-gray-600">ETA: <span class="font-medium text-indigo-600">${bus.eta}</span></p>
+                            <p class="text-sm text-gray-600">Occupancy: <span class="font-medium occupancy-${bus.occupancy.toLowerCase()}">${bus.occupancy}</span></p>
+                            <p class="text-sm text-gray-600">Fare: <span class="font-bold text-green-600">₹${bus.fare || "N/A"}</span></p>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-400"></i>
+                    `;
+                    
+                    busItems.appendChild(busDiv);
+                });
+            }
+            
+            updateBusMarkers();
+        }
+        
+        function filterBuses() {
+            const query = document.getElementById("busSearch").value.trim().toLowerCase();
+            const busItems = document.getElementById("busItems");
+            
+            busItems.innerHTML = "";
+            
+            const filteredBuses = allBuses.filter(bus => 
+                bus.name.toLowerCase().includes(query) || 
+                bus.route.toLowerCase().includes(query)
+            );
+            
+            if (filteredBuses.length === 0) {
+                busItems.innerHTML = "<p class='text-gray-500'>No buses found matching your search.</p>";
+                return;
+            }
+            
+            filteredBuses.forEach(bus => {
+                const busDiv = document.createElement("div");
+                busDiv.className = "p-4 rounded-lg shadow-md cursor-pointer hover:bg-gray-100 flex justify-between items-center transition";
+                busDiv.onclick = () => selectBus(bus.id);
+                
+                busDiv.innerHTML = `
+                    <div>
+                        <h4 class="font-semibold text-lg">${bus.name} (${bus.route})</h4>
+                        <p class="text-sm text-gray-600">ETA: <span class="font-medium text-indigo-600">${bus.eta}</span></p>
+                        <p class="text-sm text-gray-600">Occupancy: <span class="font-medium occupancy-${bus.occupancy.toLowerCase()}">${bus.occupancy}</span></p>
+                        <p class="text-sm text-gray-600">Fare: <span class="font-bold text-green-600">₹${bus.fare || "N/A"}</span></p>
+                    </div>
+                    <i class="fas fa-chevron-right text-gray-400"></i>
+                `;
+                
+                busItems.appendChild(busDiv);
+            });
+            
+            updateBusMarkers();
+        }
+        
+        function updateBusMarkers() {
+            // Clear existing markers
+            Object.values(busMarkers).forEach(marker => {
+                if (userMap && marker) {
+                    userMap.removeLayer(marker);
+                }
+            });
+            
+            busMarkers = {};
+            
+            // Add markers for all buses
+            allBuses.forEach(bus => {
+                if (!bus.lat || !bus.lng) return;
+                
+                const busIcon = L.divIcon({
+                    html: `<i class="fas fa-bus text-3xl" style="color:${bus.occupancy === 'Full' ? '#ef4444' : bus.occupancy === 'Medium' ? '#eab308' : '#22c55e'};"></i>`,
+                    className: 'custom-div-icon',
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 30]
+                });
+                
+                const marker = L.marker([bus.lat, bus.lng], { icon: busIcon }).addTo(userMap);
+                
+                const popupContent = `
+                    <div class="font-sans">
+                        <h4 class="font-bold text-lg mb-1">${bus.name} (${bus.route})</h4>
+                        <p class="text-sm"><strong>ETA:</strong> <span class="text-indigo-600">${bus.eta}</span></p>
+                        <p class="text-sm"><strong>Occupancy:</strong> <span class="occupancy-${bus.occupancy.toLowerCase()}">${bus.occupancy}</span></p>
+                        <p class="text-sm"><strong>Fare:</strong> <span class="font-bold text-green-600">₹${bus.fare || "N/A"}</span></p>
+                        <button onclick="selectBus('${bus.id}')" class="mt-2 w-full btn-primary text-white text-xs px-2 py-1 rounded-md">View Details</button>
+                    </div>
+                `;
+                
+                marker.bindPopup(popupContent);
+                busMarkers[bus.id] = marker;
+            });
+        }
+        
+        function selectBus(busId) {
+            const bus = allBuses.find(b => b.id === busId);
+            
+            if (!bus) {
+                alert("Bus not found!");
+                return;
+            }
+            
+            selectedBusForBooking = bus;
+            document.getElementById("selectedBusName").textContent = bus.name;
+            document.getElementById("routeFareDisplay").textContent = `(Fare: ₹${bus.fare || "N/A"})`;
+            document.getElementById("seatBookingSection").classList.remove("hidden");
+            
+            renderSeatMatrix(bus);
+            
+            if (bus.lat && bus.lng) {
+                userMap.setView([bus.lat, bus.lng], 16);
+            }
+        }
+        
+        function renderSeatMatrix(bus) {
+            const seatMatrix = document.getElementById("seatMatrix");
+            seatMatrix.innerHTML = "";
+            
+            bus.seats.forEach(seat => {
+                const seatDiv = document.createElement("div");
+                seatDiv.className = `seat ${seat.status} rounded-lg shadow-sm`;
+                seatDiv.id = `seat-${seat.id}`;
+                
+                seatDiv.innerHTML = `
+                    <i class="fas fa-chair text-2xl mb-1"></i>
+                    <span class="seat-id">${seat.id}</span>
+                    <span class="seat-type">${seat.type}</span>
+                `;
+                
+                if (seat.status === "occupied") {
+                    seatDiv.innerHTML += `<span class="seat-booked-by">Booked</span>`;
+                } else {
+                    seatDiv.classList.add("cursor-pointer");
+                    seatDiv.onclick = () => selectSeat(seat.id);
+                }
+                
+                seatMatrix.appendChild(seatDiv);
+            });
+        }
+        
+        function selectSeat(seatId) {
+            const allSeats = document.querySelectorAll('.seat');
+            allSeats.forEach(seat => seat.classList.remove('selected'));
+            
+            const selectedSeatDiv = document.getElementById(`seat-${seatId}`);
+            
+            if (selectedSeatDiv.classList.contains('occupied')) {
+                return;
+            }
+            
+            selectedSeatDiv.classList.add('selected');
+            selectedSeat = seatId;
+            
+            document.getElementById("selectedSeatNumber").textContent = seatId;
+            document.getElementById("bookingForm").classList.remove("hidden");
+        }
+        
+        function openTicketing() {
+            alert("Digital ticketing functionality is conceptual. In a real app, this would open a payment gateway or QR code scanner.");
+        }
+        
+        function submitFeedback() {
+            const feedback = document.getElementById("feedbackText").value.trim();
+            
+            if (feedback.length > 0) {
+                alert("Thank you for your feedback! Your report has been submitted.");
+                document.getElementById("feedbackText").value = "";
+            } else {
+                alert("Please write your feedback before submitting.");
+            }
+        }
+        
+        function setBusAlert() {
+            const bus = document.getElementById("alertBus").value.trim();
+            const stop = document.getElementById("alertStop").value.trim();
+            const minutes = document.getElementById("alertMinutes").value.trim();
+            
+            if (bus && stop && minutes) {
+                alert(`Alert set for bus '${bus}' at stop '${stop}' when it is ${minutes} minutes away.`);
+            } else {
+                alert("Please fill in all alert details.");
+            }
+        }
+        
+        function triggerEmergency(mode) {
+            alert(`Emergency alert sent from ${mode} mode. Authorities have been notified.`);
+        }
+        
+        // Utility functions
+        function changeLanguage(lang) {
+            alert(`Language changed to ${lang}. (Conceptual: requires translations)`);
+        }
+        
+        function calculateETA(currentLat, currentLng, stops) {
+            if (!stops || stops.length === 0) return "N/A";
+            
+            // Simple ETA calculation for demo purposes
+            // In a real app, this would use distance and average speed
+            const randomETA = Math.floor(Math.random() * 30) + 5;
+            return `${randomETA} min`;
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = "none";
+        }
+        
+        function forgotPassword() {
+            alert("Password reset functionality would be implemented with a backend service.");
+        }
+        
+        // Initialize the application when the page loads
+        window.onload = initApp;
+    </script>
+
+<!-- Firebase integration -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, addDoc, getDoc, updateDoc, query, where } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBtLA06vYjPistp13eWX7Kt1XuBwLeEaNc",
+    authDomain: "transnova-5be65.firebaseapp.com",
+    projectId: "transnova-5be65",
+    storageBucket: "transnova-5be65.firebasestorage.app",
+    messagingSenderId: "840109049736",
+    appId: "1:840109049736:web:48dbbe6bacf69c0c841c3d",
+    measurementId: "G-1C80J1SJM3"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+
+  // Track current user
+  let currentUser = null;
+  let currentDriverData = null;
+
+  // Listen for authentication state changes
+  onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    if (user && currentMode === "driver") {
+      // User is signed in, load driver data
+      loadDriverData(user.uid);
+    }
+  });
+
+  // ---------------- Load Driver Data ---------------- 
+  async function loadDriverData(uid) {
+    try {
+      const docRef = doc(db, "drivers", uid);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        currentDriverData = docSnap.data();
+        document.getElementById("driverNameDisplay").textContent = currentDriverData.name;
+        document.getElementById("driverRouteDisplay").textContent = `${currentDriverData.routeName} (${currentDriverData.routeNumber})`;
+        document.getElementById("driverEmailDisplay").textContent = currentDriverData.email;
+        
+        // Also load bus data
+        const busRef = doc(db, "buses", uid);
+        const busSnap = await getDoc(busRef);
+        
+        if (busSnap.exists()) {
+          const busData = busSnap.data();
+          currentDriverData = { ...currentDriverData, ...busData };
+        }
+        
+        // Set up real-time listener for bus data
+        setupDriverRealTimeListener(uid);
+        
+        // Show driver panel
+        document.getElementById("driverAuthentication").classList.add("hidden");
+        document.getElementById("driverPanel").classList.remove("hidden");
+      } else {
+        console.log("No such driver document!");
+      }
+    } catch (err) {
+      console.error("Error loading driver data:", err);
+      alert("Error loading driver data: " + err.message);
+    }
+  }
+
+  // ---------------- Driver Registration ---------------- 
+  window.driverRegister = async function() {
+    const name = document.getElementById("regDriverName").value.trim();
+    const email = document.getElementById("regDriverEmail").value.trim();
+    const password = document.getElementById("regDriverPassword").value.trim();
+    const routeName = document.getElementById("regRouteName").value.trim();
+    const routeNumber = document.getElementById("regRouteNumber").value.trim();
+    const mobile = document.getElementById("regMobile").value.trim();
+
+    // Validate inputs
+    if (!name || !email || !password || !routeName || !routeNumber) {
+      alert("Please fill all required fields.");
+      return;
+    }
+
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = userCredential.user.uid;
+
+      // Save driver data to Firestore
+      await setDoc(doc(db, "drivers", uid), {
+        uid,
+        name,
+        email,
+        mobile,
+        routeName,
+        routeNumber,
+        createdAt: new Date().toISOString()
+      });
+
+      // Also create a bus document for this driver
+      const rows = parseInt(document.getElementById("seatRows").value);
+      const cols = parseInt(document.getElementById("seatCols").value);
+      const pattern = document.getElementById("seatPattern").value;
+      
+      // Collect stop information
+      const stops = [];
+      const stopInputs = document.querySelectorAll('.stop-name-input');
+      const timeInputs = document.querySelectorAll('.stop-time-input');
+      
+      for (let i = 0; i < stopInputs.length; i++) {
+        const stopName = stopInputs[i].value.trim();
+        const stopTime = timeInputs[i].value;
+        
+        if (stopName) {
+          // Generate approximate coordinates for demo purposes
+          const lat = 22.5726 + (i * 0.01);
+          const lng = 88.3639 + (i * 0.01);
+          stops.push({ name: stopName, lat, lng, scheduledTime: stopTime });
+        }
+      }
+
+      // Generate seat layout
+      const seats = generateSeatLayout(rows, cols, pattern);
+
+      // Create bus document
+      await setDoc(doc(db, "buses", uid), {
+        id: uid,
+        driverId: uid,
+        name: routeName,
+        route: routeName,
+        lat: stops[0]?.lat || 22.5726,
+        lng: stops[0]?.lng || 88.3639,
+        eta: "N/A",
+        fare: 0,
+        fareMethod: "fixed",
+        baseFare: 20,
+        perKmRate: 5,
+        occupancy: "Low",
+        stops,
+        seats,
+        createdAt: new Date().toISOString()
+      });
+
+      alert("Driver registered successfully!");
+      showDriverLogin();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  };
+
+  // ---------------- Driver Login ---------------- 
+  window.driverLogin = async function() {
+    const email = document.getElementById("driverEmail").value.trim();
+    const password = document.getElementById("driverPassword").value.trim();
+
+    if (!email || !password) {
+      alert("Please enter email and password.");
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // The onAuthStateChanged listener will handle the rest
+    } catch (err) {
+      alert("Login failed: " + err.message);
+    }
+  };
+
+  // ---------------- Driver Logout ---------------- 
+  window.driverLogout = async function() {
+    try {
+      await signOut(auth);
+      currentDriverData = null;
+      
+      // Reset UI
+      document.getElementById("driverPanel").classList.add("hidden");
+      document.getElementById("driverAuthentication").classList.remove("hidden");
+      document.getElementById("driverLogin").classList.remove("hidden");
+      document.getElementById("driverRegistration").classList.add("hidden");
+      
+      // Clear input fields
+      document.getElementById("driverEmail").value = "";
+      document.getElementById("driverPassword").value = "";
+      
+      // Stop location sharing if active
+      if (isSharing) {
+        stopLocationSharing();
+      }
+      
+      alert("Logged out successfully!");
+    } catch (err) {
+      console.error("Logout error:", err);
+      alert("Error during logout: " + err.message);
+    }
+  };
+
+  // ---------------- Update Bus Location ---------------- 
+  window.startLocationSharing = async function() {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by this browser.");
+      return;
+    }
+    
+    if (isSharing) return;
+    
+    if (!currentUser) {
+      alert("Please login first.");
+      return;
+    }
+
+    isSharing = true;
+    document.getElementById("locationStatus").textContent = "Sharing location...";
+    
+    driverInterval = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const timestamp = new Date(pos.timestamp).toLocaleTimeString();
+        
+        document.getElementById("currentLocation").textContent = `Position: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        document.getElementById("locationTimestamp").textContent = `Last Update: ${timestamp}`;
+        
+        // Update bus location in Firestore
+        try {
+          const busRef = doc(db, "buses", currentUser.uid);
+          await updateDoc(busRef, {
+            lat: lat,
+            lng: lng,
+            lastUpdated: new Date().toISOString()
+          });
+        } catch (err) {
+          console.error("Error updating bus location:", err);
+        }
+        
+        // Update map marker (existing code)
+        if (!driverMarker) {
+          const busIcon = L.divIcon({
+            html: '<i class="fas fa-bus text-3xl" style="color:#22c55e;"></i>',
+            className: 'custom-div-icon',
+            iconSize: [30, 30],
+            iconAnchor: [15, 30]
+          });
+          
+          driverMarker = L.marker([lat, lng], { icon: busIcon })
+            .addTo(driverMap)
+            .bindPopup("Your Bus Location")
+            .openPopup();
+        } else {
+          driverMarker.setLatLng([lat, lng]);
+        }
+        
+        driverMap.setView([lat, lng]);
+      },
+      (err) => {
+        document.getElementById("locationStatus").textContent = `Error: ${err.message}`;
+        alert(`Geolocation Error: ${err.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+  };
+
+  // ---------------- Update Occupancy ---------------- 
+  window.updateOccupancy = async function() {
+    const occupancy = document.getElementById("occupancyLevel").value;
+    
+    if (!currentUser) {
+      alert("Please login first.");
+      return;
+    }
+
+    try {
+      const busRef = doc(db, "buses", currentUser.uid);
+      await updateDoc(busRef, {
+        occupancy: occupancy
+      });
+      
+      alert(`Occupancy updated to: ${occupancy}`);
+    } catch (err) {
+      console.error("Error updating occupancy:", err);
+      alert("Error updating occupancy: " + err.message);
+    }
+  };
+
+  // ---------------- Update Route Fare ---------------- 
+  window.updateRouteFare = async function() {
+    if (!currentUser) {
+      alert("Please login first.");
+      return;
+    }
+
+    const method = document.getElementById("fareMethod").value;
+    let fareData = {};
+    
+    if (method === "fixed") {
+      const fare = parseFloat(document.getElementById("fixedFare").value);
+      
+      if (isNaN(fare) || fare < 0) {
+        alert("Please enter a valid fare amount.");
+        return;
+      }
+      
+      fareData = {
+        fare: fare,
+        fareMethod: "fixed"
+      };
+    } else if (method === "distance") {
+      const baseFare = parseFloat(document.getElementById("baseFare").value);
+      const perKmRate = parseFloat(document.getElementById("perKmRate").value);
+      
+      if (isNaN(baseFare) || baseFare < 0 || isNaN(perKmRate) || perKmRate < 0) {
+        alert("Please enter valid fare parameters.");
+        return;
+      }
+      
+      fareData = {
+        baseFare: baseFare,
+        perKmRate: perKmRate,
+        fareMethod: "distance"
+      };
+    } else if (method === "manual") {
+      const fare = parseFloat(prompt("Enter the fare amount:"));
+      
+      if (isNaN(fare) || fare < 0) {
+        alert("Please enter a valid fare amount.");
+        return;
+      }
+      
+      fareData = {
+        fare: fare,
+        fareMethod: "manual"
+      };
+    }
+    
+    try {
+      const busRef = doc(db, "buses", currentUser.uid);
+      await updateDoc(busRef, fareData);
+      
+      alert(`Fare updated successfully!`);
+    } catch (err) {
+      console.error("Error updating fare:", err);
+      alert("Error updating fare: " + err.message);
+    }
+  };
+
+  // ---------------- Show Booked Seats ---------------- 
+  window.showBookedSeats = async function() {
+    const driverId = document.getElementById("driverEmail").value.trim();
+    
+    try {
+      // Get current bus data
+      const busRef = doc(db, "buses", currentUser.uid);
+      const busSnap = await getDoc(busRef);
+      
+      if (!busSnap.exists()) {
+        alert("Bus not found. Please login again.");
+        return;
+      }
+      
+      const bus = busSnap.data();
+      const bookedSeatsList = document.getElementById("bookedSeatsList");
+      bookedSeatsList.innerHTML = "";
+      
+      const bookedSeats = bus.seats.filter(seat => seat.status === "occupied");
+      document.getElementById("modalBusInfo").textContent = `Route: ${bus.route} (${bus.name})`;
+      
+      if (bookedSeats.length === 0) {
+        bookedSeatsList.innerHTML = "<p class='text-gray-500'>No seats are currently booked.</p>";
+      } else {
+        bookedSeats.forEach(seat => {
+          const seatItem = document.createElement("div");
+          seatItem.className = "p-3 bg-gray-100 rounded-lg shadow-sm";
+          seatItem.innerHTML = `
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-bold text-lg">Seat ${seat.id}</span>
+              <button onclick="unbookSeat('${bus.id}', '${seat.id}')" class="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm">Unbook</button>
+            </div>
+            <p class="text-sm"><strong>Passenger:</strong> ${seat.bookedBy}</p>
+            <p class="text-sm"><strong>Aadhar:</strong> ${seat.aadhar}</p>
+            <p class="text-sm"><strong>Phone:</strong> ${seat.phone}</p>
+            <p class="text-sm"><strong>Address:</strong> ${seat.address}</p>
+          `;
+          bookedSeatsList.appendChild(seatItem);
+        });
+      }
+      
+      document.getElementById("bookedSeatsModal").style.display = "flex";
+    } catch (err) {
+      console.error("Error loading booked seats:", err);
+      alert("Error loading booked seats: " + err.message);
+    }
+  };
+
+  // ---------------- Unbook Seat ---------------- 
+  window.unbookSeat = async function(busId, seatId) {
+    try {
+      // Get the bus document
+      const busRef = doc(db, "buses", busId);
+      const busSnap = await getDoc(busRef);
+      
+      if (!busSnap.exists()) {
+        alert("Bus not found.");
+        return;
+      }
+      
+      const busData = busSnap.data();
+      
+      // Update the seat status
+      const updatedSeats = busData.seats.map(seat => {
+        if (seat.id === seatId) {
+          return {
+            ...seat,
+            status: "vacant",
+            bookedBy: null,
+            aadhar: null,
+            phone: null,
+            address: null
+          };
+        }
+        return seat;
+      });
+      
+      // Update the bus document
+      await updateDoc(busRef, {
+        seats: updatedSeats
+      });
+      
+      // Also update the bookings collection (mark as cancelled)
+      const bookingsQuery = query(
+        collection(db, "bookings"), 
+        where("busId", "==", busId),
+        where("seatId", "==", seatId),
+        where("status", "==", "confirmed")
+      );
+      
+      const querySnapshot = await getDocs(bookingsQuery);
+      querySnapshot.forEach(async (bookingDoc) => {
+        await updateDoc(bookingDoc.ref, {
+          status: "cancelled",
+          cancelledAt: new Date().toISOString()
+        });
+      });
+      
+      // Refresh the booked seats list
+      showBookedSeats();
+    } catch (err) {
+      console.error("Error unbooking seat:", err);
+      alert("Error unbooking seat: " + err.message);
+    }
+  };
+
+  // ---------------- Show Manual Booking ---------------- 
+  window.showManualBooking = async function() {
+    const driverId = document.getElementById("driverEmail").value.trim();
+    const bus = allBuses.find(b => b.id === driverId);
+    
+    if (!bus) {
+      alert("Bus not found. Please login again.");
+      return;
+    }
+    
+    const seatSelect = document.getElementById("manualSeatSelect");
+    seatSelect.innerHTML = "<option value=''>Select a seat</option>";
+    
+    // Add only vacant seats to the dropdown
+    bus.seats.filter(seat => seat.status === "vacant").forEach(seat => {
+      const option = document.createElement("option");
+      option.value = seat.id;
+      option.textContent = `Seat ${seat.id} (${seat.type})`;
+      seatSelect.appendChild(option);
+    });
+    
+    // Clear form fields
+    document.getElementById("manualPassengerName").value = "";
+    document.getElementById("manualAadhar").value = "";
+    document.getElementById("manualPhone").value = "";
+    document.getElementById("manualAddress").value = "";
+    
+    document.getElementById("manualBookingModal").style.display = "flex";
+  };
+
+  // ---------------- Process Manual Booking ---------------- 
+  window.processManualBooking = async function() {
+    const driverId = document.getElementById("driverEmail").value.trim();
+    const seatId = document.getElementById("manualSeatSelect").value;
+    const passengerName = document.getElementById("manualPassengerName").value.trim();
+    const aadhar = document.getElementById("manualAadhar").value.trim();
+    const phone = document.getElementById("manualPhone").value.trim();
+    const address = document.getElementById("manualAddress").value.trim();
+    
+    if (!seatId || !passengerName || !aadhar) {
+      alert("Please select a seat and provide passenger name and Aadhar number.");
+      return;
+    }
+    
+    try {
+      // Get the bus document
+      const busRef = doc(db, "buses", currentUser.uid);
+      const busSnap = await getDoc(busRef);
+      
+      if (!busSnap.exists()) {
+        alert("Bus not found. Please login again.");
+        return;
+      }
+      
+      const busData = busSnap.data();
+      
+      // Check if seat is already occupied
+      const seat = busData.seats.find(s => s.id === seatId);
+      if (seat && seat.status === "occupied") {
+        alert("This seat is already booked. Please select another seat.");
+        return;
+      }
+      
+      // Save booking to Firestore
+      const bookingData = {
+        busId: currentUser.uid,
+        seatId: seatId,
+        passengerName: passengerName,
+        aadhar: aadhar,
+        phone: phone,
+        address: address,
+        bookingTime: new Date().toISOString(),
+        bookedBy: "driver", // Indicate this was booked by the driver
+        status: "confirmed"
+      };
+      
+      await addDoc(collection(db, "bookings"), bookingData);
+      
+      // Update the seat status in the bus document
+      const updatedSeats = busData.seats.map(seat => {
+        if (seat.id === seatId) {
+          return {
+            ...seat,
+            status: "occupied",
+            bookedBy: passengerName,
+            aadhar: aadhar,
+            phone: phone,
+            address: address
+          };
+        }
+        return seat;
+      });
+      
+      await updateDoc(busRef, {
+        seats: updatedSeats
+      });
+      
+      alert(`Seat ${seatId} successfully booked for ${passengerName}`);
+      closeModal('manualBookingModal');
+      
+      // Refresh the driver data
+      await loadDriverData(currentUser.uid);
+    } catch (err) {
+      console.error("Error processing manual booking:", err);
+      alert("Error processing manual booking: " + err.message);
+    }
+  };
+
+  // ---------------- Confirm Booking ---------------- 
+  window.confirmBooking = async function() {
+    const bookingName = document.getElementById("bookingName").value.trim();
+    const bookingAadhar = document.getElementById("bookingAadhar").value.trim();
+    const bookingPhone = document.getElementById("bookingPhone").value.trim();
+    const bookingAddress = document.getElementById("bookingAddress").value.trim();
+    
+    if (!bookingName || !bookingAadhar) {
+      alert("Please enter your Name and Aadhar Number.");
+      return;
+    }
+    
+    if (!selectedBusForBooking || !selectedSeat) {
+      alert("Please select a bus and a seat first.");
+      return;
+    }
+    
+    try {
+      // Save booking to Firestore
+      const bookingData = {
+        busId: selectedBusForBooking.id,
+        seatId: selectedSeat,
+        passengerName: bookingName,
+        aadhar: bookingAadhar,
+        phone: bookingPhone,
+        address: bookingAddress,
+        bookingTime: new Date().toISOString(),
+        status: "confirmed"
+      };
+      
+      // Add booking to the bookings collection
+      await addDoc(collection(db, "bookings"), bookingData);
+      
+      // Also update the bus document to mark the seat as occupied
+      const busRef = doc(db, "buses", selectedBusForBooking.id);
+      const busSnap = await getDoc(busRef);
+      
+      if (busSnap.exists()) {
+        const busData = busSnap.data();
+        const updatedSeats = busData.seats.map(seat => {
+          if (seat.id === selectedSeat) {
+            return {
+              ...seat,
+              status: "occupied",
+              bookedBy: bookingName,
+              aadhar: bookingAadhar,
+              phone: bookingPhone,
+              address: bookingAddress
+            };
+          }
+          return seat;
+        });
+        
+        await updateDoc(busRef, {
+          seats: updatedSeats
+        });
+      }
+      
+      alert(`Booking successful for seat ${selectedSeat} on ${selectedBusForBooking.name}!`);
+      
+      document.getElementById("bookingForm").classList.add("hidden");
+      document.getElementById("bookingName").value = "";
+      document.getElementById("bookingAadhar").value = "";
+      document.getElementById("bookingPhone").value = "";
+      document.getElementById("bookingAddress").value = "";
+      
+      // Refresh the seat matrix
+      if (currentMode === "driver") {
+        await loadDriverData(currentUser.uid);
+      } else {
+        await loadBusesForUserView();
+        if (selectedBusForBooking) {
+          const updatedBus = allBuses.find(b => b.id === selectedBusForBooking.id);
+          if (updatedBus) {
+            renderSeatMatrix(updatedBus);
+          }
+        }
+      }
+      
+      selectedSeat = null;
+    } catch (err) {
+      console.error("Error confirming booking:", err);
+      alert("Error confirming booking: " + err.message);
+    }
+  };
+
+  // ---------------- Load Buses for User View ---------------- 
+  async function loadBusesForUserView() {
+    try {
+      // Set up real-time listener for buses
+      const q = collection(db, "buses");
+      onSnapshot(q, (querySnapshot) => {
+        allBuses = [];
+        querySnapshot.forEach((doc) => {
+          allBuses.push(doc.data());
+        });
+        
+        updateBusMarkers();
+        
+        // If a bus is selected for booking, update the seat matrix
+        if (selectedBusForBooking) {
+          const updatedBus = allBuses.find(b => b.id === selectedBusForBooking.id);
+          if (updatedBus) {
+            renderSeatMatrix(updatedBus);
+          }
+        }
+      });
+    } catch (err) {
+      console.error("Error loading buses:", err);
+    }
+  }
+
+  // ---------------- Setup Driver Real-Time Listener ---------------- 
+  async function setupDriverRealTimeListener(uid) {
+    const busRef = doc(db, "buses", uid);
+    
+    onSnapshot(busRef, (doc) => {
+      if (doc.exists()) {
+        const busData = doc.data();
+        currentDriverData = { ...currentDriverData, ...busData };
+        
+        // Update UI if needed
+        if (document.getElementById("driverPanel") && 
+          !document.getElementById("driverPanel").classList.contains("hidden")) {
+          // Refresh booked seats if modal is open
+          if (document.getElementById("bookedSeatsModal").style.display === "flex") {
+            showBookedSeats();
+          }
+        }
+      }
+    });
+  }
+
+  // ---------------- Generate Seat Layout Function ---------------- 
+  function generateSeatLayout(rows, cols, pattern) {
+    const seats = [];
+    const rowLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'];
+    
+    for (let row = 0; row < rows; row++) {
+      for (let col = 1; col <= cols; col++) {
+        let seatId;
+        if (pattern === "numeric") {
+          seatId = (row * cols + col).toString();
+        } else {
+          seatId = rowLabels[row] + col;
+        }
+        
+        seats.push({ 
+          id: seatId, 
+          type: col === 1 || col === cols ? "window" : "aisle", 
+          status: "vacant", 
+          bookedBy: null, 
+          aadhar: null,
+          phone: null,
+          address: null
+        });
+      }
+    }
+    
+    return seats;
+  }
+
+  // ---------------- Admin Registration ---------------- 
+  window.adminRegister = async function() {
+    const name = document.getElementById("regAdminName").value.trim();
+    const email = document.getElementById("regAdminEmail").value.trim();
+    const password = document.getElementById("regAdminPassword").value.trim();
+    const mobile = document.getElementById("regAdminMobile").value.trim();
+    const authorityCode = document.getElementById("regAuthorityCode").value.trim();
+
+    if (!name || !email || !password || !authorityCode) {
+      alert("Please fill all required fields.");
+      return;
+    }
+
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = userCredential.user.uid;
+
+      await setDoc(doc(db, "admins", uid), {
+        uid,
+        name,
+        email,
+        mobile,
+        authorityCode,
+        createdAt: new Date().toISOString()
+      });
+
+      alert("Admin registered successfully!");
+      showAdminLogin();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  };
+
+  // ---------------- Admin Login ---------------- 
+  window.adminLogin = async function() {
+    const email = document.getElementById("adminEmail").value.trim();
+    const password = document.getElementById("adminPassword").value.trim();
+
+    if (!email || !password) {
+      alert("Please enter email and password.");
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      alert("Admin login successful!");
+      // Here you would typically redirect to an admin dashboard
+    } catch (err) {
+      alert("Login failed: " + err.message);
+    }
+  };
+
+  // Initialize buses when user page is loaded
+  const originalSelectMode = window.selectMode;
+  window.selectMode = function(mode) {
+    originalSelectMode(mode);
+    
+    if (mode === "user") {
+      // Load buses from Firestore when user mode is selected
+      loadBusesForUserView();
+    }
+  };
+
+</script>
+<!-- End Firebase integration -->
+
+</body>
+</html>
